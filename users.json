@@ -13,5 +13,10 @@
     "user": "1",
     "pwd": "w",
     "score": 3
+  },
+  {
+    "user": "ee",
+    "pwd": "4",
+    "score": 0
   }
 ]
