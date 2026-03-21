@@ -25,5 +25,11 @@
     "pwd": "x12345678",
     "score": 26,
     "achievements": []
+  },
+  {
+    "user": "zqy\u0005",
+    "pwd": "123456",
+    "score": 0,
+    "achievements": []
   }
 ]
