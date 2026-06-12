@@ -55,7 +55,9 @@
   {
     "user": "ee",
     "pwd": "4",
-    "score": 45,
-    "achievements": []
+    "score": 119,
+    "achievements": [
+      1
+    ]
   }
 ]
