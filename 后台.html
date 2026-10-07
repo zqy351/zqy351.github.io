@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>卡密后台管理系统</title>
+<style>
+:root{--bg:#0e1015;--card:#171b24;--line:#2a3140;--fg:#e7eaf1;--dim:#8b94a8;--acc:#4f8cff;--ok:#34c77b;--warn:#ffb74d;--err:#ff6b6b;}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--fg);font-family:'Segoe UI',system-ui,-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;padding:18px;}
+.wrap{max-width:1000px;margin:0 auto;}
+h1{font-size:21px;margin-bottom:4px;}
+.sub{color:var(--dim);font-size:12.5px;margin-bottom:18px;line-height:1.7;}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px;}
+.card h2{font-size:14px;margin-bottom:12px;color:var(--acc);}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;}
+label{display:block;font-size:12px;color:var(--dim);margin-bottom:4px;}
+input,select,button,textarea{width:100%;background:#11141c;color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:9px 10px;font-size:13.5px;font-family:inherit;}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--acc);}
+button{cursor:pointer;font-weight:600;transition:.15s;}
+button.primary{background:var(--acc);border-color:var(--acc);color:#fff;}
+button.primary:hover{filter:brightness(1.12);}
+button.ok{background:var(--ok);border-color:var(--ok);color:#06281a;}
+button.ok:hover{filter:brightness(1.1);}
+button.danger{background:transparent;border-color:var(--err);color:var(--err);}
+button.small{padding:4px 9px;font-size:12px;width:auto;}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+.status{margin-top:10px;font-size:13px;min-height:20px;line-height:1.5;word-break:break-all;}
+.status.ok{color:var(--ok);} .status.err{color:var(--err);} .status.info{color:var(--dim);}
+table{width:100%;border-collapse:collapse;font-size:12.5px;}
+th,td{text-align:left;padding:7px 6px;border-bottom:1px solid var(--line);vertical-align:middle;}
+th{color:var(--dim);font-weight:500;white-space:nowrap;}
+.pill{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11.5px;white-space:nowrap;}
+.pill.active{background:rgba(52,199,123,.15);color:var(--ok);}
+.pill.disabled{background:rgba(255,107,107,.15);color:var(--err);}
+.pill.used{background:rgba(255,183,77,.15);color:var(--warn);}
+.pill.expired{background:rgba(139,148,168,.18);color:var(--dim);}
+.gen-list{margin-top:12px;max-height:250px;overflow:auto;font-family:ui-monospace,Consolas,'Courier New',monospace;font-size:12.5px;line-height:1.9;word-break:break-all;background:#0e1117;border:1px solid var(--line);border-radius:8px;padding:10px 12px;}
+.muted{color:var(--dim);}
+.stat-card{background:#0e1117;border:1px solid var(--line);border-radius:10px;padding:10px 12px;text-align:center;}
+.stat-card .n{font-size:20px;font-weight:700;color:var(--acc);}
+.stat-card .l{font-size:11.5px;color:var(--dim);margin-top:2px;}
+textarea{min-height:72px;resize:vertical;font-family:ui-monospace,Consolas,monospace;font-size:12.5px;}
+.hint{font-size:12px;color:var(--dim);margin-top:6px;line-height:1.6;}
+code{background:#0e1117;border:1px solid var(--line);border-radius:4px;padding:1px 5px;font-size:12px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>🔐 卡密后台管理系统</h1>
+<div class="sub">生成卡密 → AES-256-GCM 加密 + HMAC 签名 → 上传到 GitHub 云端 → 主软件联网验证。<br>云端只存卡密哈希，不存明文；卡密明文只在生成时展示，请及时导出保存。</div>
+
+<div class="card">
+<h2>① GitHub 云端配置</h2>
+<div class="grid">
+<div><label>仓库拥有者 owner（GitHub 用户名）</label><input id="cfg_owner" placeholder="如 zhangshan"></div>
+<div><label>仓库名 repo</label><input id="cfg_repo" placeholder="如 card-cloud"></div>
+<div><label>分支 branch</label><input id="cfg_branch" value="main"></div>
+<div><label>云端卡密库文件路径</label><input id="cfg_path" value="cards.enc"></div>
+<div style="grid-column:1/-1"><label>GitHub Token（需该仓库 Contents 读写权限；仅保存在本机浏览器 localStorage）</label><input id="cfg_token" type="password" placeholder="github_pat_... 或 ghp_..."></div>
+</div>
+<div class="row" style="margin-top:10px"><button class="primary small" onclick="saveCfg()">保存配置</button><span class="status info" id="cfg_status" style="margin-top:0"></span></div>
+<div class="hint">Token 生成路径：GitHub → Settings → Developer settings → Personal access tokens → <b>Fine-grained tokens</b> → 勾选你的仓库 → Repository permissions 里把 <code>Contents</code> 设为 <code>Read and write</code>。</div>
+</div>
+
+<div class="card">
+<h2>② 批量生成卡密</h2>
+<div class="grid">
+<div><label>生成数量（1-500）</label><input id="gen_count" type="number" value="10" min="1" max="500"></div>
+<div><label>前缀（可留空，如 VIP）</label><input id="gen_prefix" placeholder="VIP"></div>
+<div><label>有效期（天，0=永久）</label><input id="gen_days" type="number" value="30" min="0"></div>
+<div><label>最大使用次数</label><input id="gen_uses" type="number" value="1" min="1" max="9999"></div>
+<div><label>绑定设备</label><select id="gen_bind"><option value="0">否</option><option value="1">是（首次使用后锁定设备）</option></select></div>
+</div>
+<div class="row" style="margin-top:10px">
+<button class="primary" onclick="genCards()">生成卡密</button>
+<button class="small" onclick="copyCodes()">复制明文</button>
+<button class="small" onclick="downloadTxt()">导出 txt</button>
+<button class="ok" onclick="uploadCloud(true)">上传云端（合并）</button>
+<button class="danger" onclick="uploadCloud(false)">覆盖上传（危险）</button>
+</div>
+<div class="status info" id="gen_status"></div>
+<div id="gen_area"></div>
+</div>
+
+<div class="card">
+<h2>③ 云端卡密库 · 使用统计</h2>
+<div class="row" style="margin-bottom:10px"><button class="primary" onclick="loadCloud()">拉取云端卡密库</button><span class="status info" id="cloud_status" style="margin-top:0"></span></div>
+<div id="cloud_stats" class="grid" style="margin-bottom:10px"></div>
+<div id="cloud_table"></div>
+</div>
+
+<div class="card">
+<h2>④ 生成主软件配置码</h2>
+<div class="grid">
+<div><label>软件名称（显示在主软件登录页）</label><input id="cfg_name" value="示例软件"></div>
+<div><label>主软件模式</label><select id="cfg_mode"><option value="1">写回模式（统计使用次数，需内嵌 Token）</option><option value="0">只读模式（仅验证不计数，更安全）</option></select></div>
+<div style="grid-column:1/-1"><label>允许部署的域名白名单（逗号分隔，留空=不限制；填了之后其他域名无法运行）</label><input id="cfg_hosts" placeholder="如 zhangshan.github.io"></div>
+<div style="grid-column:1/-1"><label>主页内容（HTML，验证通过后显示；即主软件的“主页”）</label><textarea id="cfg_home"><h1>欢迎使用本软件</h1>
+<p>卡密验证通过，你已成功进入主页。</p>
+<p class="muted">这里是主页占位内容 —— 你可以在后台「④ 生成主软件配置码」里替换成自己的主页内容。</p></textarea></div>
+</div>
+<div class="row" style="margin-top:10px">
+<button class="primary" onclick="buildAppCfg()">生成主软件配置码</button>
+<button class="small" onclick="copyOut()">复制配置码</button>
+<button class="small" onclick="selfTest()">加密自检</button>
+<span class="status info" id="cfg_status2" style="margin-top:0"></span>
+</div>
+<div class="hint">生成后，把下面这一整行（<code>const __APP_CFG__ = "...";</code>）替换到 <code>主软件.html</code> 源码里相同位置，再重新上传主软件即可。Token 会以编码形式嵌进主软件，分发前请确认使用受限 Token。</div>
+<textarea id="cfg_out" readonly placeholder="生成的配置码会显示在这里..." style="margin-top:8px;min-height:110px;"></textarea>
+</div>
+</div>
+
+<script>
+'use strict';
+/* ================= 常量（主软件必须一致） ================= */
+const SEED = 'D8k#9fQ$2xL@pR7';
+
+/* ================= 编码 / 加密工具 ================= */
+function b64f(u){let s='';for(let i=0;i<u.length;i++)s+=String.fromCharCode(u[i]);return btoa(s);}
+function f64b(s){const b=atob(s),u=new Uint8Array(b.length);for(let i=0;i<b.length;i++)u[i]=b.charCodeAt(i);return u;}
+function hx(u){return Array.from(new Uint8Array(u)).map(b=>b.toString(16).padStart(2,'0')).join('');}
+function rev(u){return Uint8Array.from(Array.from(u).reverse());}
+async function sha(b){return crypto.subtle.digest('SHA-256',b);}
+async function aKey(s){return crypto.subtle.importKey('raw',await sha(new TextEncoder().encode(s)),{name:'AES-GCM'},false,['encrypt','decrypt']);}
+async function hKey(s){return crypto.subtle.importKey('raw',await sha(new TextEncoder().encode('hmac:'+s)),{name:'HMAC',hash:'SHA-256'},false,['sign','verify']);}
+async function seal(obj,seed){
+  seed=seed||SEED;
+  const key=await aKey(seed),hk=await hKey(seed);
+  const iv=crypto.getRandomValues(new Uint8Array(12));
+  const pt=new TextEncoder().encode(JSON.stringify(obj));
+  const ct=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},key,pt));
+  const ivc=new Uint8Array(iv.length+ct.length);ivc.set(iv);ivc.set(ct,iv.length);
+  const sg=new Uint8Array(await crypto.subtle.sign('HMAC',hk,ivc));
+  return b64f(iv)+'.'+b64f(ct)+'.'+b64f(sg);
+}
+async function openSeal(str,seed){
+  seed=seed||SEED;
+  const key=await aKey(seed),hk=await hKey(seed);
+  const p=str.split('.');
+  if(p.length!==3) throw new Error('格式错误');
+  const iv=f64b(p[0]),ct=f64b(p[1]),sg=f64b(p[2]);
+  const ivc=new Uint8Array(iv.length+ct.length);ivc.set(iv);ivc.set(ct,iv.length);
+  const okv=await crypto.subtle.verify('HMAC',hk,sg,ivc);
+  if(!okv) throw new Error('签名校验失败（数据被篡改）');
+  const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv},key,ct);
+  return JSON.parse(new TextDecoder().decode(pt));
+}
+/* 分层混淆编码：用于主软件配置码（多层 XOR + 反转 + Base64） */
+function encL(str){
+  let u=new TextEncoder().encode(str);
+  for(let i=0;i<u.length;i++)u[i]^=0x5A;u=rev(u);
+  for(let i=0;i<u.length;i++)u[i]^=0x3C;u=rev(u);
+  for(let i=0;i<u.length;i++)u[i]^=0x17;u=rev(u);
+  return b64f(u);
+}
+function decL(s){
+  let u=f64b(s);
+  u=rev(u);for(let i=0;i<u.length;i++)u[i]^=0x17;
+  u=rev(u);for(let i=0;i<u.length;i++)u[i]^=0x3C;
+  u=rev(u);for(let i=0;i<u.length;i++)u[i]^=0x5A;
+  return new TextDecoder().decode(u);
+}
+
+/* ================= 配置 ================= */
+function el(id){return document.getElementById(id);}
+function cfg(){try{return JSON.parse(localStorage.getItem('card_admin_cfg')||'null')||{};}catch(e){return {};}}
+function saveCfg(){
+  const c={owner:el('cfg_owner').value.trim(),repo:el('cfg_repo').value.trim(),branch:el('cfg_branch').value.trim()||'main',path:el('cfg_path').value.trim()||'cards.enc',token:el('cfg_token').value.trim()};
+  localStorage.setItem('card_admin_cfg',JSON.stringify(c));
+  st('cfg_status','配置已保存到本机浏览器 ✓','ok');
+}
+function loadCfg(){
+  const c=cfg();
+  if(c.owner)el('cfg_owner').value=c.owner;if(c.repo)el('cfg_repo').value=c.repo;
+  if(c.branch)el('cfg_branch').value=c.branch;if(c.path)el('cfg_path').value=c.path;
+  if(c.token)el('cfg_token').value=c.token;
+}
+function cfgOk(){
+  const c=cfg();
+  if(!c.owner||!c.repo){st('gen_status','请先填写并保存 ① 区配置','err');return null;}
+  if(!c.token){st('gen_status','缺少 GitHub Token','err');return null;}
+  return c;
+}
+function st(id,msg,cls){const e=el(id);e.textContent=msg;e.className='status '+(cls||'info');}
+
+/* ================= 卡密生成 ================= */
+const ALPH='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+let PENDING=[];      // 待上传的卡对象
+let PENDING_CODES=[]; // 待上传的卡明文
+function makeCode(prefix){
+  const seg=()=>{const u=new Uint32Array(5);crypto.getRandomValues(u);let s='';for(let i=0;i<5;i++)s+=ALPH[u[i]%ALPH.length];return s;};
+  const code=seg()+'-'+seg();
+  return prefix?prefix+'-'+code:code;
+}
+function randId(){return Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,8);}
+async function hashCard(code){return hx(await sha(new TextEncoder().encode('CARD:'+code.toUpperCase().trim())));}
+async function genCards(){
+  const n=Math.floor(+el('gen_count').value)||0;
+  if(n<1||n>500){st('gen_status','生成数量须在 1-500 之间','err');return;}
+  const prefix=el('gen_prefix').value.trim().toUpperCase();
+  const days=Math.floor(+el('gen_days').value)||0;
+  const maxUses=Math.floor(+el('gen_uses').value)||1;
+  const bind=el('gen_bind').value==='1';
+  const now=Date.now();
+  for(let i=0;i<n;i++){
+    const code=makeCode(prefix);
+    PENDING.push({id:randId(),hash:await hashCard(code),created_at:now,expires_at:days>0?now+days*86400000:0,max_uses:maxUses,used_count:0,bind_device:bind,devices:[],last_used_at:0,status:'active'});
+    PENDING_CODES.push(code);
+  }
+  renderGenList();
+  st('gen_status','已生成 '+n+' 张（累计待上传 '+PENDING.length+' 张）。注意：卡密明文只在生成时显示，请立即复制/导出保存！','info');
+}
+function renderGenList(){
+  const a=el('gen_area');
+  if(!PENDING_CODES.length){a.innerHTML='';return;}
+  a.innerHTML='<div class="muted" style="font-size:12px;margin-top:10px">待上传卡密明文（'+PENDING_CODES.length+' 张）：</div><div class="gen-list">'+PENDING_CODES.map(c=>'<div>'+c+'</div>').join('')+'</div>';
+}
+function copyCodes(){
+  if(!PENDING_CODES.length){st('gen_status','没有待上传的卡密','err');return;}
+  const s=PENDING_CODES.join('\n');
+  navigator.clipboard.writeText(s).then(()=>st('gen_status','已复制 '+PENDING_CODES.length+' 张卡密到剪贴板 ✓','ok')).catch(()=>st('gen_status','复制失败，请手动选择复制','err'));
+}
+function downloadTxt(){
+  if(!PENDING_CODES.length){st('gen_status','没有可导出的卡密','err');return;}
+  const blob=new Blob([PENDING_CODES.join('\n')],{type:'text/plain;charset=utf-8'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download='卡密明文_'+new Date().toISOString().slice(0,10)+'.txt';a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),3000);
+  st('gen_status','已导出 txt 文件（请妥善保存）✓','ok');
+}
+
+/* ================= GitHub 云端 ================= */
+function apiBase(c){return 'https://api.github.com/repos/'+encodeURIComponent(c.owner)+'/'+encodeURIComponent(c.repo)+'/contents/'+c.path;}
+async function ghGet(){
+  const c=cfg();
+  const url=apiBase(c)+'?ref='+encodeURIComponent(c.branch);
+  let r;
+  try{r=await fetch(url,{headers:{Authorization:'Bearer '+c.token,Accept:'application/vnd.github+json'}});}
+  catch(e){return {ok:false,msg:'网络错误：'+e.message};}
+  if(r.status===404)return {ok:false,notFound:true};
+  if(!r.ok)return {ok:false,status:r.status,msg:'拉取失败('+r.status+')：'+(await r.text()).slice(0,160)};
+  const j=await r.json();
+  let obj;
+  try{obj=await openSeal(new TextDecoder().decode(f64b(j.content)));}
+  catch(e){return {ok:false,msg:'云端数据解密失败：'+e.message};}
+  return {ok:true,sha:j.sha,obj};
+}
+async function ghPut(encStr,sha){
+  const c=cfg();
+  const body={message:'update card vault @'+new Date().toISOString(),content:b64f(new TextEncoder().encode(encStr)),branch:c.branch};
+  if(sha)body.sha=sha;
+  let r;
+  try{r=await fetch(apiBase(c),{method:'PUT',headers:{Authorization:'Bearer '+c.token,Accept:'application/vnd.github+json','Content-Type':'application/json'},body:JSON.stringify(body)});}
+  catch(e){return {ok:false,msg:'网络错误：'+e.message};}
+  if(r.ok)return {ok:true};
+  return {ok:false,status:r.status,msg:'上传失败('+r.status+')：'+(await r.text()).slice(0,160)};
+}
+
+async function uploadCloud(merge){
+  const c=cfgOk();if(!c)return;
+  if(!PENDING.length){st('gen_status','没有待上传的新卡密，请先在 ② 区生成','err');return;}
+  if(!merge){
+    const sure=confirm('覆盖上传将用【当前待上传的 '+PENDING.length+' 张】替换云端全部卡密，且旧卡密将失效，确定？');
+    if(!sure)return;
+  }
+  st('gen_status','正在处理云端数据...','info');
+  let cloud={ver:1,updated:0,cards:[]},sha=null;
+  if(merge){
+    const g=await ghGet();
+    if(g.ok){cloud=g.obj;sha=g.sha;}
+    else if(!g.notFound){st('gen_status',g.msg,'err');return;}
+  }
+  const byHash={};cloud.cards.forEach(x=>byHash[x.hash]=x);
+  let added=0;
+  PENDING.forEach(x=>{if(!byHash[x.hash]){byHash[x.hash]=x;added++;}});
+  cloud.cards=Object.values(byHash);
+  cloud.updated=Date.now();
+  const enc=await seal(cloud);
+  const r=await ghPut(enc,sha);
+  if(r.ok){
+    st('gen_status','上传成功 ✓ 云端现有 '+cloud.cards.length+' 张，本次新增 '+added+' 张。明文卡密已提醒导出。','ok');
+    if(PENDING_CODES.length)downloadTxt();
+    PENDING=[];PENDING_CODES=[];renderGenList();
+  }else{
+    st('gen_status',r.msg,'err');
+  }
+}
+
+/* ================= 云端统计 ================= */
+function fmtTime(ts){if(!ts)return '永久';const d=new Date(ts),p=n=>String(n).padStart(2,'0');return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes());}
+function cardState(c,now){
+  if(c.status!=='active')return 'disabled';
+  if(c.expires_at&&now>c.expires_at)return 'expired';
+  if(c.used_count>=c.max_uses)return 'used';
+  return 'active';
+}
+async function loadCloud(){
+  const c=cfgOk();if(!c)return;
+  st('cloud_status','正在拉取...','info');
+  const g=await ghGet();
+  if(!g.ok){st('cloud_status',g.msg,'err');el('cloud_table').innerHTML='';el('cloud_stats').innerHTML='';return;}
+  const cards=g.obj.cards||[],now=Date.now();
+  let active=0,used=0,disabled=0,expired=0,totalUses=0;
+  const rows=cards.map(x=>{
+    const stt=cardState(x,now);
+    if(stt==='active')active++;else if(stt==='used')used++;else if(stt==='disabled')disabled++;else expired++;
+    totalUses+=x.used_count;
+    const lbl=stt==='active'?'可用':stt==='used'?'已用尽':stt==='disabled'?'已禁用':'已过期';
+    return '<tr><td>'+x.hash.slice(0,14)+'</td><td>'+fmtTime(x.created_at)+'</td><td>'+fmtTime(x.expires_at)+'</td><td>'+x.used_count+' / '+x.max_uses+'</td><td>'+(x.bind_device?'是':'否')+'</td><td><span class="pill '+stt+'">'+lbl+'</span></td><td>'+(stt==='disabled'?'<button class="small" onclick="toggleCard(\''+x.hash+'\',\'active\')">启用</button>':'<button class="small danger" onclick="toggleCard(\''+x.hash+'\',\'disabled\')">禁用</button>')+'</td></tr>';
+  }).join('');
+  el('cloud_stats').innerHTML=
+    '<div class="stat-card"><div class="n">'+cards.length+'</div><div class="l">卡密总数</div></div>'+
+    '<div class="stat-card"><div class="n" style="color:var(--ok)">'+active+'</div><div class="l">可用</div></div>'+
+    '<div class="stat-card"><div class="n" style="color:var(--warn)">'+used+'</div><div class="l">已用尽</div></div>'+
+    '<div class="stat-card"><div class="n" style="color:var(--dim)">'+expired+'</div><div class="l">已过期</div></div>'+
+    '<div class="stat-card"><div class="n" style="color:var(--err)">'+disabled+'</div><div class="l">已禁用</div></div>'+
+    '<div class="stat-card"><div class="n" style="color:var(--acc)">'+totalUses+'</div><div class="l">累计使用次数</div></div>';
+  el('cloud_table').innerHTML='<table><thead><tr><th>卡密哈希(前14位)</th><th>创建时间</th><th>到期时间</th><th>使用次数</th><th>绑设备</th><th>状态</th><th>操作</th></tr></thead><tbody>'+rows+'</tbody></table>';
+  st('cloud_status','拉取成功：共 '+cards.length+' 张 ✓','ok');
+}
+async function toggleCard(hash,ns){
+  const c=cfgOk();if(!c)return;
+  st('cloud_status','正在更新...','info');
+  const g=await ghGet();
+  if(!g.ok){st('cloud_status',g.msg,'err');return;}
+  const x=g.obj.cards.find(y=>y.hash===hash);
+  if(!x){st('cloud_status','卡密不存在','err');return;}
+  x.status=ns;
+  const enc=await seal(g.obj);
+  const r=await ghPut(enc,g.sha);
+  if(r.ok){st('cloud_status','已'+(ns==='disabled'?'禁用':'启用')+'该卡密 ✓','ok');loadCloud();}
+  else st('cloud_status',r.msg,'err');
+}
+
+/* ================= ④ 生成主软件配置码 ================= */
+function copyOut(){
+  const v=el('cfg_out').value;
+  if(!v){st('cfg_status2','没有可复制的内容','err');return;}
+  navigator.clipboard.writeText(v).then(()=>st('cfg_status2','配置码已复制 ✓','ok')).catch(()=>st('cfg_status2','复制失败，请手动选择复制','err'));
+}
+async function buildAppCfg(){
+  const c=cfg();
+  if(!c.owner||!c.repo){st('cfg_status2','请先填写并保存 ① 区配置','err');return;}
+  const mode=el('cfg_mode').value==='1'?1:0;
+  const home=el('cfg_home').value;
+  const hosts=el('cfg_hosts').value.split(/[,，\s]+/).map(s=>s.trim().toLowerCase()).filter(Boolean);
+  const obj={n:el('cfg_name').value.trim()||'软件',o:c.owner,r:c.repo,p:c.path||'cards.enc',b:c.branch||'main',t:mode?c.token:'',h:hosts,s:SEED,m:mode,home:home};
+  const enc=encL(JSON.stringify(obj));
+  el('cfg_out').value='const __APP_CFG__ = '+JSON.stringify(enc)+';';
+  st('cfg_status2','配置码已生成（'+enc.length+' 字符）✓','ok');
+}
+async function selfTest(){
+  try{
+    const t={a:1,b:'你好',c:[1,2,3]};
+    const e=await seal(t),d=await openSeal(e);
+    const s='hello 测试';const l=encL(s),dl=decL(l);
+    const ok=JSON.stringify(d)===JSON.stringify(t)&&dl===s;
+    st('cfg_status2','加密自检：'+(ok?'通过 ✓ 加密/解密/签名/混淆全部正常':'失败 ✗'),ok?'ok':'err');
+  }catch(e){st('cfg_status2','自检异常：'+e.message,'err');}
+}
+loadCfg();
+</script>
+</body>
+</html>

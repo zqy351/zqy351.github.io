@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>主软件</title>
+<style>
+:root{--bg:#0e1015;--card:#171b24;--line:#2a3140;--fg:#e7eaf1;--dim:#8b94a8;--acc:#4f8cff;--ok:#34c77b;--err:#ff6b6b;}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--fg);font-family:'Segoe UI',system-ui,-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:16px;}
+#loginView{width:100%;max-width:420px;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:30px 24px;text-align:center;}
+.logo{width:64px;height:64px;border-radius:16px;background:linear-gradient(135deg,#4f8cff,#7b5cff);display:flex;align-items:center;justify-content:center;font-size:28px;margin:0 auto 14px;color:#fff;font-weight:700;}
+h1{font-size:19px;margin-bottom:6px;}
+.tip{color:var(--dim);font-size:12.5px;margin-bottom:22px;}
+input#code{width:100%;background:#0e1117;color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:13px 14px;font-size:16px;text-align:center;letter-spacing:1px;font-family:ui-monospace,Consolas,monospace;text-transform:uppercase;}
+input#code:focus{outline:none;border-color:var(--acc);}
+button#btn{width:100%;margin-top:12px;background:var(--acc);border:none;color:#fff;border-radius:10px;padding:13px;font-size:15px;font-weight:700;cursor:pointer;transition:.15s;}
+button#btn:hover{filter:brightness(1.12);}
+button#btn:disabled{opacity:.55;cursor:not-allowed;}
+#st{margin-top:14px;font-size:13.5px;min-height:20px;line-height:1.5;}
+#st.ok{color:var(--ok);}#st.err{color:var(--err);}#st.info{color:var(--dim);}
+.foot{color:var(--dim);font-size:11.5px;margin-top:20px;line-height:1.6;}
+#homeView{width:100%;max-width:760px;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:30px;display:none;}
+#homeView h1{margin-bottom:10px;}
+#homeView p{color:var(--fg);line-height:1.8;font-size:14px;}
+#homeView .muted{color:var(--dim);}
+</style>
+</head>
+<body>
+
+<div id="loginView">
+  <div class="logo" id="logo">软</div>
+  <h1 id="appName">主软件</h1>
+  <div class="tip">请输入卡密验证后进入</div>
+  <input id="code" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXXX-XXXXX" maxlength="48">
+  <button id="btn" onclick="__V()">验证并进入</button>
+  <div id="st"></div>
+  <div class="foot">本软件需联网验证 · 请通过官方部署地址访问<br>卡密仅限本人使用，请勿外传</div>
+</div>
+
+<div id="homeView"></div>
+
+<script>
+'use strict';
+/* ============================================================
+ * 部署配置（由后台「④ 生成主软件配置码」产出后替换这一行）
+ * ============================================================ */
+const __APP_CFG__ = "";
+
+/* ================= 解码 / 加密基础层（勿改动） ================= */
+function _Z(u){var s='';for(var i=0;i<u.length;i++)s+=String.fromCharCode(u[i]);return btoa(s);}
+function _Y(s){var b=atob(s),u=new Uint8Array(b.length);for(var i=0;i<b.length;i++)u[i]=b.charCodeAt(i);return u;}
+function _R(u){return Uint8Array.from(Array.from(u).reverse());}
+function _D(s){
+  var u=_Y(s);
+  u=_R(u);for(var i=0;i<u.length;i++)u[i]^=0x17;
+  u=_R(u);for(var i=0;i<u.length;i++)u[i]^=0x3C;
+  u=_R(u);for(var i=0;i<u.length;i++)u[i]^=0x5A;
+  return new TextDecoder('utf-8').decode(u);
+}
+function _E(s){
+  var u=new TextEncoder().encode(s);
+  for(var i=0;i<u.length;i++)u[i]^=0x5A;u=_R(u);
+  for(var i=0;i<u.length;i++)u[i]^=0x3C;u=_R(u);
+  for(var i=0;i<u.length;i++)u[i]^=0x17;u=_R(u);
+  return _Z(u);
+}
+function _H(u){return Array.from(new Uint8Array(u)).map(function(b){return b.toString(16).padStart(2,'0');}).join('');}
+function _S(b){return crypto.subtle.digest('SHA-256',b);}
+async function _K(s){return crypto.subtle.importKey('raw',await _S(new TextEncoder().encode(s)),{name:'AES-GCM'},false,['encrypt','decrypt']);}
+async function _M(s){return crypto.subtle.importKey('raw',await _S(new TextEncoder().encode('hmac:'+s)),{name:'HMAC',hash:'SHA-256'},false,['sign','verify']);}
+async function _Seal(o,seed){
+  var key=await _K(seed),hk=await _M(seed);
+  var iv=crypto.getRandomValues(new Uint8Array(12));
+  var pt=new TextEncoder().encode(JSON.stringify(o));
+  var ct=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv:iv},key,pt));
+  var ivc=new Uint8Array(iv.length+ct.length);ivc.set(iv);ivc.set(ct,iv.length);
+  var sg=new Uint8Array(await crypto.subtle.sign('HMAC',hk,ivc));
+  return _Z(iv)+'.'+_Z(ct)+'.'+_Z(sg);
+}
+async function _Open(str,seed){
+  var key=await _K(seed),hk=await _M(seed);
+  var p=str.split('.');
+  if(p.length!==3)throw new Error('数据格式错误');
+  var iv=_Y(p[0]),ct=_Y(p[1]),sg=_Y(p[2]);
+  var ivc=new Uint8Array(iv.length+ct.length);ivc.set(iv);ivc.set(ct,iv.length);
+  var okv=await crypto.subtle.verify('HMAC',hk,sg,ivc);
+  if(!okv)throw new Error('数据完整性校验失败');
+  var pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:iv},key,ct);
+  return JSON.parse(new TextDecoder().decode(pt));
+}
+
+/* ================= 运行时配置 ================= */
+var __CFG=null;
+try{
+  if(__APP_CFG__){
+    var _j=_D(__APP_CFG__);
+    if(_j&&_j.charAt(0)==='{')__CFG=JSON.parse(_j);
+  }
+}catch(e){__CFG=null;}
+if(!__CFG){
+  var _b=document.getElementById('st');if(_b){_b.textContent='软件未部署配置，请联系管理员';_b.className='err';}
+  document.getElementById('btn').disabled=true;
+  var _i=document.getElementById('code');if(_i)_i.disabled=true;
+}else{
+  document.getElementById('appName').textContent=__CFG.n||'主软件';
+  document.getElementById('logo').textContent=(__CFG.n||'软').charAt(0);
+}
+
+/* ================= 域名白名单（防他人部署） ================= */
+function _HostOk(){
+  if(!__CFG)return false;
+  var h=__CFG.h;
+  if(!h||!h.length)return true;
+  var host=location.hostname.toLowerCase();
+  for(var i=0;i<h.length;i++){if(host===h[i]||host.endsWith('.'+h[i]))return true;}
+  return false;
+}
+
+/* ================= 设备指纹 ================= */
+async function _FP(){
+  var parts=[navigator.userAgent,navigator.language||'',screen.width+'x'+screen.height,new Date().getTimezoneOffset()];
+  try{
+    var c=document.createElement('canvas');c.width=220;c.height=60;
+    var x=c.getContext('2d');x.font='18px sans-serif';x.fillText('dk-fp-9x2',15,35);
+    parts.push(c.toDataURL().slice(0,400));
+  }catch(e){parts.push('nc');}
+  return _H(await _S(new TextEncoder().encode('DEV:'+parts.join('|')))).slice(0,32);
+}
+
+/* ================= 云端读取 / 写回 ================= */
+function _Api(){return 'https://api.github.com/repos/'+__CFG.o+'/'+__CFG.r+'/contents/'+__CFG.p;}
+function _Raw(){return 'https://raw.githubusercontent.com/'+__CFG.o+'/'+__CFG.r+'/'+__CFG.b+'/'+__CFG.p;}
+async function _G(){
+  var url,headers={},via='raw';
+  if(__CFG.m===1&&__CFG.t){url=_Api()+'?ref='+encodeURIComponent(__CFG.b);headers={Authorization:'Bearer '+__CFG.t,Accept:'application/vnd.github+json'};via='api';}
+  else{url=_Raw();}
+  var r;
+  try{r=await fetch(url,{headers:headers});}catch(e){throw new Error('无法连接云端，请检查网络');}
+  if(!r.ok)throw new Error('云端数据不可达 ('+r.status+')');
+  var off=0;
+  try{var d=new Date(r.headers.get('date'));if(!isNaN(d.getTime()))off=d.getTime()-Date.now();}catch(e){}
+  var txt,sha=null;
+  if(via==='api'){var j=await r.json();txt=new TextDecoder().decode(_Y(j.content));sha=j.sha;}
+  else{txt=await r.text();}
+  return {obj:await _Open(txt,__CFG.s),off:off,sha:sha};
+}
+async function _P(enc,sha){
+  var body={message:'card use @'+Date.now(),content:_Z(new TextEncoder().encode(enc)),branch:__CFG.b};
+  if(sha)body.sha=sha;
+  var r=await fetch(_Api(),{method:'PUT',headers:{Authorization:'Bearer '+__CFG.t,Accept:'application/vnd.github+json','Content-Type':'application/json'},body:JSON.stringify(body)});
+  return r;
+}
+async function _W(hash,fp,t){
+  for(var i=0;i<4;i++){
+    var g=await _G();
+    var card=null;
+    for(var k=0;k<g.obj.cards.length;k++){if(g.obj.cards[k].hash===hash){card=g.obj.cards[k];break;}}
+    if(!card)return {ok:false,m:'云端卡密状态已变化，请重试'};
+    var now=t+g.off;
+    var rep=(card.devices&&card.devices.indexOf(fp)>=0)&&card.last_used_at&&(now-card.last_used_at)<60000;
+    if(!rep){
+      card.used_count=(card.used_count||0)+1;
+      if(card.bind_device&&card.devices&&card.devices.indexOf(fp)<0)card.devices.push(fp);
+    }
+    card.last_used_at=now;
+    var enc=await _Seal(g.obj,__CFG.s);
+    var r=await _P(enc,g.sha);
+    if(r.ok)return {ok:true};
+    if(r.status===409)continue;
+    return {ok:false,m:'云端写入失败('+r.status+')'};
+  }
+  return {ok:false,m:'云端繁忙，请稍后重试'};
+}
+
+/* ================= 卡密验证主流程 ================= */
+function _st(msg,cls){var e=document.getElementById('st');e.textContent=msg;e.className=cls||'info';}
+function _showHome(code){
+  try{sessionStorage.setItem('vk',_E(JSON.stringify({c:code,t:Date.now()})));}catch(e){}
+  document.getElementById('loginView').style.display='none';
+  var h=document.getElementById('homeView');
+  h.style.display='block';
+  h.innerHTML=__CFG.home||'<h1>欢迎</h1><p>验证通过。</p>';
+}
+async function __V(){
+  var inp=document.getElementById('code');
+  var btn=document.getElementById('btn');
+  var code=(inp.value||'').trim().toUpperCase();
+  if(!code){_st('请输入卡密','err');return;}
+  if(!__CFG){_st('软件未部署配置，请联系管理员','err');return;}
+  if(!_HostOk()){_st('当前部署域名未授权，无法运行','err');return;}
+  btn.disabled=true;inp.disabled=true;
+  _st('正在验证...','info');
+  try{
+    var g=await _G();
+    var hash=_H(await _S(new TextEncoder().encode('CARD:'+code)));
+    var card=null;
+    for(var k=0;k<g.obj.cards.length;k++){if(g.obj.cards[k].hash===hash){card=g.obj.cards[k];break;}}
+    if(!card)throw new Error('卡密不存在或已被移除');
+    var t=Date.now()+g.off;
+    if(card.status!=='active')throw new Error('卡密已被禁用');
+    if(t<card.created_at)throw new Error('卡密尚未生效');
+    if(card.expires_at&&t>card.expires_at)throw new Error('卡密已过期');
+    if(card.used_count>=card.max_uses)throw new Error('该卡密使用次数已用完');
+    var fp=await _FP();
+    if(card.bind_device&&card.devices&&card.devices.length&&card.devices.indexOf(fp)<0)throw new Error('该卡密已绑定其他设备');
+    if(__CFG.m===1&&__CFG.t){
+      var w=await _W(hash,fp,t);
+      if(!w.ok)throw new Error(w.m);
+    }
+    _st('验证成功，正在进入...','ok');
+    _showHome(code);
+  }catch(e){
+    _st(e.message||'验证失败','err');
+    btn.disabled=false;inp.disabled=false;
+  }
+}
+
+/* ================= 会话免验（10 分钟内刷新不重输） ================= */
+(function(){
+  if(!__CFG)return;
+  try{
+    var v=sessionStorage.getItem('vk');
+    if(v){
+      var o=JSON.parse(_D(v));
+      if(o&&Date.now()-o.t<600000){_showHome(o.c);}
+    }
+  }catch(e){}
+})();
+document.getElementById('code').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();__V();}});
+</script>
+</body>
+</html>
